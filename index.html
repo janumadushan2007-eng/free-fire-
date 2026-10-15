@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Nimbus — Share Files Instantly</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: { extend: {
+    fontFamily: { sans: ['Inter','ui-sans-serif','system-ui'] },
+    colors: { brand: {300:'#93c5fd',400:'#60a5fa',500:'#3b82f6',600:'#6366f1'} }
+  }}
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg1:#0b1023; --bg2:#131a36;
+    --glass: rgba(255,255,255,.06);
+    --glass-brd: rgba(255,255,255,.12);
+    --txt:#e8ecf8; --sub:#9aa4c0;
+    --grad: linear-gradient(135deg,#6366f1 0%,#8b5cf6 45%,#3b82f6 100%);
+  }
+  html.light{
+    --bg1:#eef1fb; --bg2:#e4e9fa;
+    --glass: rgba(255,255,255,.65);
+    --glass-brd: rgba(30,41,82,.10);
+    --txt:#1c2440; --sub:#5b668a;
+  }
+  *{ -webkit-tap-highlight-color:transparent; }
+  body{
+    font-family:'Inter',sans-serif; color:var(--txt); min-height:100vh;
+    background:
+      radial-gradient(1200px 800px at 85% -10%, rgba(99,102,241,.28), transparent 60%),
+      radial-gradient(1000px 700px at -10% 110%, rgba(59,130,246,.22), transparent 60%),
+      linear-gradient(160deg,var(--bg1),var(--bg2));
+    background-attachment:fixed;
+  }
+  .glass{ background:var(--glass); border:1px solid var(--glass-brd); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); }
+  .grad-text{ background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .btn-primary{ background:var(--grad); transition:.25s; box-shadow:0 8px 24px -6px rgba(99,102,241,.55); }
+  .btn-primary:hover{ transform:translateY(-2px); box-shadow:0 14px 30px -6px rgba(99,102,241,.65); }
+  .btn-primary:active{ transform:translateY(0); }
+  /* Dropzone */
+  #dropzone{ transition:all .3s cubic-bezier(.22,1,.36,1); cursor:pointer; position:relative; overflow:hidden; }
+  #dropzone::before{ content:''; position:absolute; inset:0; background:var(--grad); opacity:0; transition:.3s; }
+  #dropzone.dragging{ transform:scale(1.02); border-color:#8b5cf6; box-shadow:0 0 0 4px rgba(139,92,246,.25), 0 20px 60px -10px rgba(99,102,241,.4); }
+  #dropzone.dragging::before{ opacity:.12; }
+  #dropzone:hover{ border-color:rgba(139,92,246,.55); }
+  .float-icon{ animation:floaty 3.5s ease-in-out infinite; }
+  @keyframes floaty{ 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+  /* Progress */
+  #progBar{ transition:width .15s linear; background:var(--grad); }
+  .shimmer{ position:relative; overflow:hidden; }
+  .shimmer::after{ content:''; position:absolute; inset:0; background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.35) 50%,transparent 70%); animation:shim 1.4s infinite; }
+  @keyframes shim{ from{transform:translateX(-100%)} to{transform:translateX(100%)} }
+  /* Success ring */
+  .check-circle{ stroke-dasharray:166; stroke-dashoffset:166; animation:ring .7s cubic-bezier(.65,0,.45,1) forwards; }
+  .check-mark{ stroke-dasharray:48; stroke-dashoffset:48; animation:ring .4s .6s cubic-bezier(.65,0,.45,1) forwards; }
+  @keyframes ring{ to{stroke-dashoffset:0} }
+  /* Confetti burst */
+  .confetti{ position:absolute; width:8px; height:8px; border-radius:2px; pointer-events:none; animation:burst 1.1s cubic-bezier(.16,1,.3,1) forwards; }
+  @keyframes burst{ to{ transform:translate(var(--tx),var(--ty)) rotate(var(--rot)); opacity:0; } }
+  /* View transitions */
+  .view{ animation:fadeUp .5s cubic-bezier(.22,1,.36,1) both; }
+  @keyframes fadeUp{ from{opacity:0; transform:translateY(18px)} to{opacity:1; transform:translateY(0)} }
+  .card-hover{ transition:.3s cubic-bezier(.22,1,.36,1); }
+  .card-hover:hover{ transform:translateY(-3px); box-shadow:0 16px 40px -12px rgba(0,0,0,.45); }
+  .badge{ font-size:.65rem; letter-spacing:.08em; }
+  ::selection{ background:rgba(139,92,246,.4); }
+  input[type=checkbox]{ accent-color:#8b5cf6; }
+  .toast{ animation:toastIn .4s cubic-bezier(.22,1,.36,1) both; }
+  @keyframes toastIn{ from{opacity:0; transform:translateY(14px) scale(.95)} to{opacity:1; transform:none} }
+  .qr-wrap img, .qr-wrap canvas{ border-radius:12px; }
+  #qrBox{ background:#fff; padding:12px; border-radius:16px; display:inline-block; }
+  .icon-tile{ width:88px; height:88px; border-radius:24px; display:flex; align-items:center; justify-content:center; }
+</style>
+<base target="_blank">
+</head>
+<body class="antialiased">
+
+<!-- ==================== HOME VIEW ==================== -->
+<div id="view-home" class="max-w-3xl mx-auto px-5 py-10 md:py-16">
+  <header class="flex items-center justify-between mb-10">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-2xl flex items-center justify-center" style="background:var(--grad)">
+        <i data-lucide="cloud-upload" class="w-5 h-5 text-white"></i>
+      </div>
+      <div>
+        <h1 class="font-extrabold text-xl leading-none">Nimbus<span class="grad-text">Share</span></h1>
+        <p class="text-xs mt-1" style="color:var(--sub)">Fast · Private · Beautiful</p>
+      </div>
+    </div>
+    <button id="themeBtn" class="glass w-10 h-10 rounded-xl flex items-center justify-center hover:scale-105 transition" title="Toggle theme">
+      <i data-lucide="moon" class="w-5 h-5" id="themeIcon"></i>
+    </button>
+  </header>
+
+  <div class="text-center mb-8">
+    <h2 class="text-3xl md:text-5xl font-extrabold tracking-tight mb-3">Drop it. <span class="grad-text">Share it.</span></h2>
+    <p class="text-sm md:text-base" style="color:var(--sub)">Upload a file and get an instant shareable link + QR code.<br class="hidden md:block"/> Passwords &amp; expirations supported.</p>
+  </div>
+
+  <!-- Dropzone -->
+  <div id="dropzone" class="glass rounded-3xl border-2 border-dashed p-10 md:p-14 text-center select-none">
+    <div id="dzIdle">
+      <div class="relative inline-block mb-5">
+        <div class="float-icon w-20 h-20 mx-auto rounded-3xl flex items-center justify-center" style="background:var(--grad); box-shadow:0 16px 40px -8px rgba(99,102,241,.6)">
+          <i data-lucide="upload-cloud" class="w-9 h-9 text-white"></i>
+        </div>
+      </div>
+      <p class="font-bold text-lg mb-1">Drag &amp; drop your file here</p>
+      <p class="text-sm mb-5" style="color:var(--sub)">or</p>
+      <button class="btn-primary text-white font-semibold px-6 py-3 rounded-xl inline-flex items-center gap-2" onclick="event.stopPropagation();document.getElementById('fileInput').click()">
+        <i data-lucide="folder-open" class="w-4 h-4"></i> Browse files
+      </button>
+      <p class="text-xs mt-5 flex items-center justify-center gap-1.5" style="color:var(--sub)">
+        <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> Max file size: <span class="font-semibold">500 MB</span>
+      </p>
+    </div>
+
+    <!-- Uploading state -->
+    <div id="dzUploading" class="hidden text-left">
+      <div class="flex items-center gap-4 mb-4">
+        <div class="w-12 h-12 rounded-2xl glass flex items-center justify-center shrink-0"><i data-lucide="file-up" class="w-6 h-6"></i></div>
+        <div class="min-w-0 flex-1">
+          <p id="upName" class="font-semibold truncate"></p>
+          <p id="upMeta" class="text-xs" style="color:var(--sub)"></p>
+        </div>
+        <span id="upPct" class="font-extrabold text-2xl grad-text">0%</span>
+      </div>
+      <div class="h-3 rounded-full overflow-hidden glass shimmer mb-3"><div id="progBar" class="h-full rounded-full" style="width:0%"></div></div>
+      <div class="flex justify-between text-xs" style="color:var(--sub)">
+        <span id="upSpeed" class="flex items-center gap-1"><i data-lucide="gauge" class="w-3.5 h-3.5"></i> 0 MB/s</span>
+        <span id="upEta">—</span>
+      </div>
+    </div>
+
+    <!-- Success state -->
+    <div id="dzSuccess" class="hidden relative">
+      <svg class="w-24 h-24 mx-auto mb-4" viewBox="0 0 52 52">
+        <circle class="check-circle" cx="26" cy="26" r="24" fill="none" stroke="url(#g1)" stroke-width="3"/>
+        <path class="check-mark" fill="none" stroke="url(#g1)" stroke-width="4" stroke-linecap="round" d="M14 27l8 8 16-17"/>
+        <defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#3b82f6"/></linearGradient></defs>
+      </svg>
+      <p class="font-bold text-xl mb-1">Upload complete!</p>
+      <p class="text-sm mb-6" style="color:var(--sub)">Your file is ready to share.</p>
+
+      <div class="glass rounded-2xl p-5 text-left mb-5">
+        <label class="text-xs font-semibold uppercase tracking-wider" style="color:var(--sub)">Share link</label>
+        <div class="flex gap-2 mt-2">
+          <input id="shareLink" readonly class="glass flex-1 min-w-0 rounded-xl px-4 py-3 text-sm bg-transparent outline-none focus:ring-2 ring-violet-400/50"/>
+          <button id="copyBtn" class="btn-primary text-white px-4 rounded-xl flex items-center gap-2 font-semibold text-sm shrink-0">
+            <i data-lucide="copy" class="w-4 h-4"></i><span class="hidden sm:inline">Copy</span>
+          </button>
+        </div>
+        <div class="flex flex-col sm:flex-row gap-5 mt-5 items-center">
+          <div id="qrBox" class="qr-wrap shrink-0"></div>
+          <div class="flex-1 w-full space-y-3 text-sm">
+            <div class="flex items-center justify-between glass rounded-xl px-4 py-2.5"><span style="color:var(--sub)">File</span><span id="sumName" class="font-semibold truncate max-w-[55%]"></span></div>
+            <div class="flex items-center justify-between glass rounded-xl px-4 py-2.5"><span style="color:var(--sub)">Size</span><span id="sumSize" class="font-semibold"></span></div>
+            <div class="flex items-center justify-between glass rounded-xl px-4 py-2.5"><span style="color:var(--sub)">Expires</span><span id="sumExp" class="font-semibold"></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap gap-3 justify-center">
+        <a id="openLinkBtn" target="_blank" class="btn-primary text-white font-semibold px-5 py-2.5 rounded-xl inline-flex items-center gap-2 text-sm"><i data-lucide="external-link" class="w-4 h-4"></i> Open download page</a>
+        <button id="againBtn" class="glass font-semibold px-5 py-2.5 rounded-xl inline-flex items-center gap-2 text-sm hover:scale-105 transition"><i data-lucide="rotate-ccw" class="w-4 h-4"></i> Share another file</button>
+      </div>
+    </div>
+
+    <!-- Error state -->
+    <div id="dzError" class="hidden">
+      <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-red-500/15 border border-red-400/30 flex items-center justify-center"><i data-lucide="alert-triangle" class="w-8 h-8 text-red-400"></i></div>
+      <p class="font-bold text-lg mb-1" id="errTitle">File too large</p>
+      <p class="text-sm mb-5" style="color:var(--sub)" id="errMsg"></p>
+      <button onclick="resetDropzone()" class="glass font-semibold px-5 py-2.5 rounded-xl text-sm hover:scale-105 transition">Try again</button>
+    </div>
+  </div>
+
+  <!-- Options -->
+  <div id="options" class="glass rounded-3xl p-5 md:p-6 mt-5">
+    <div class="flex items-center gap-2 mb-4"><i data-lucide="sliders-horizontal" class="w-4 h-4" style="color:var(--sub)"></i><span class="text-sm font-semibold" style="color:var(--sub)">SHARING OPTIONS</span></div>
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div>
+        <label class="text-sm font-semibold flex items-center gap-2 mb-2"><i data-lucide="lock" class="w-4 h-4 text-violet-400"></i> Password protection</label>
+        <div class="flex items-center gap-3">
+          <input type="checkbox" id="optPw" class="w-4 h-4"/>
+          <input id="optPwVal" type="text" placeholder="Set a password…" disabled class="glass flex-1 rounded-xl px-4 py-2.5 text-sm bg-transparent outline-none focus:ring-2 ring-violet-400/50 disabled:opacity-40"/>
+        </div>
+      </div>
+      <div>
+        <label class="text-sm font-semibold flex items-center gap-2 mb-2"><i data-lucide="timer" class="w-4 h-4 text-violet-400"></i> Link expires</label>
+        <select id="optExpiry" class="glass w-full rounded-xl px-4 py-2.5 text-sm bg-transparent outline-none focus:ring-2 ring-violet-400/50" style="color:var(--txt)">
+          <option value="never" style="color:#111">Never</option>
+          <option value="24h" style="color:#111">After 24 hours</option>
+          <option value="7d" style="color:#111">After 7 days</option>
+          <option value="1dl" style="color:#111">After 1 download</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent uploads -->
+  <div class="mt-10">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-bold text-lg flex items-center gap-2"><i data-lucide="history" class="w-5 h-5" style="color:var(--sub)"></i> Recent uploads</h3>
+      <button id="clearBtn" class="text-xs font-semibold px-3 py-1.5 rounded-lg glass hover:scale-105 transition" style="color:var(--sub)">Clear all</button>
+    </div>
+    <div id="recentList" class="space-y-3"></div>
+    <div id="recentEmpty" class="glass rounded-2xl p-8 text-center text-sm" style="color:var(--sub)">
+      <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-3 opacity-50"></i>No uploads yet — your shared files will appear here.
+    </div>
+  </div>
+
+  <footer class="text-center text-xs mt-14" style="color:var(--sub)">Built with ❤ · Files &amp; links are stored locally in your browser (demo)</footer>
+</div>
+
+<!-- ==================== DOWNLOAD VIEW ==================== -->
+<div id="view-download" class="hidden max-w-xl mx-auto px-5 py-12 md:py-20">
+  <div class="text-center mb-8">
+    <div class="w-12 h-12 mx-auto rounded-2xl flex items-center justify-center mb-4" style="background:var(--grad)"><i data-lucide="cloud-download" class="w-6 h-6 text-white"></i></div>
+    <h2 class="text-2xl md:text-3xl font-extrabold">You've received a file</h2>
+    <p class="text-sm mt-1" style="color:var(--sub)">via NimbusShare</p>
+  </div>
+
+  <div id="dlCard" class="glass rounded-3xl p-6 md:p-8 view"></div>
+</div>
+
+<!-- Toasts -->
+<div id="toasts" class="fixed bottom-5 right-5 z-50 space-y-2"></div>
+<input type="file" id="fileInput" class="hidden"/>
+
+<script>
+/* ============================================================
+   NimbusShare — single-file demo file sharing app
+   ============================================================ */
+const MAX_SIZE = 500 * 1024 * 1024;           // 500 MB limit
+const LS_KEY   = 'nimbus.files.v1';
+const sessionFiles = {};                       // id -> File (in-memory, current session)
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+const store = {
+  get(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)) || [] }catch(e){ return [] } },
+  set(v){ try{ localStorage.setItem(LS_KEY, JSON.stringify(v)) }catch(e){ toast('Storage full — oldest entries trimmed'); } },
+  add(f){ const a = this.get(); a.unshift(f); this.set(a.slice(0,30)); },
+  del(id){ this.set(this.get().filter(f => f.id !== id)); },
+  find(id){ return this.get().find(f => f.id === id); }
+};
+
+/* ---------- utils ---------- */
+const fmtSize = b => b < 1024 ? b+' B' : b < 1048576 ? (b/1024).toFixed(1)+' KB' : b < 1073741824 ? (b/1048576).toFixed(1)+' MB' : (b/1073741824).toFixed(2)+' GB';
+const fmtDate = t => new Date(t).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+const uid = () => Math.random().toString(36).slice(2,8) + Date.now().toString(36).slice(-4);
+function toast(msg, ok=true){
+  const t = document.createElement('div');
+  t.className = 'toast glass rounded-xl px-4 py-3 text-sm font-medium flex items-center gap-2 shadow-xl';
+  t.innerHTML = `<i data-lucide="${ok?'check-circle-2':'alert-triangle'}" class="w-4 h-4 ${ok?'text-emerald-400':'text-red-400'}"></i>${msg}`;
+  $('#toasts').appendChild(t); lucide.createIcons();
+  setTimeout(()=>{ t.style.transition='.4s'; t.style.opacity='0'; t.style.transform='translateY(10px)'; setTimeout(()=>t.remove(),400); }, 2600);
+}
+
+/* ---------- file-type icon ---------- */
+function fileIcon(name, size='w-6 h-6'){
+  const ext = (name.split('.').pop()||'').toLowerCase();
+  const map = {
+    pdf:['file-text','#ef4444'], doc:['file-text','#3b82f6'], docx:['file-text','#3b82f6'], txt:['file-text','#94a3b8'], md:['file-text','#94a3b8'],
+    zip:['package','#f59e0b'], rar:['package','#f59e0b'], '7z':['package','#f59e0b'], tar:['package','#f59e0b'], gz:['package','#f59e0b'],
+    mp4:['film','#a855f7'], mkv:['film','#a855f7'], mov:['film','#a855f7'], webm:['film','#a855f7'],
+    mp3:['music','#22d3ee'], wav:['music','#22d3ee'], flac:['music','#22d3ee'], ogg:['music','#22d3ee'],
+    png:['image','#10b981'], jpg:['image','#10b981'], jpeg:['image','#10b981'], gif:['image','#10b981'], svg:['image','#10b981'], webp:['image','#10b981'],
+    js:['code-2','#eab308'], ts:['code-2','#eab308'], html:['code-2','#eab308'], css:['code-2','#eab308'], json:['code-2','#eab308'], py:['code-2','#eab308']
+  };
+  const [icon,color] = map[ext] || ['file','#8b5cf6'];
+  return `<span class="inline-flex items-center justify-center rounded-xl shrink-0" style="background:${color}22;border:1px solid ${color}44;width:2.6rem;height:2.6rem"><i data-lucide="${icon}" class="${size}" style="color:${color}"></i></span>`;
+}
+
+/* ---------- theme ---------- */
+const applyTheme = dark => { document.documentElement.classList.toggle('light', !dark); $('#themeIcon').setAttribute('data-lucide', dark?'moon':'sun'); lucide.createIcons(); localStorage.setItem('nimbus.theme', dark?'dark':'light'); };
+applyTheme(localStorage.getItem('nimbus.theme') !== 'light');
+$('#themeBtn').onclick = () => applyTheme(document.documentElement.classList.contains('light'));
+
+/* ---------- routing ---------- */
+function route(){
+  const m = location.hash.match(/^#\/d\/([a-z0-9]+)/i);
+  if(m){ showDownload(m[1]); } else { showHome(); }
+}
+window.addEventListener('hashchange', route);
+
+function showHome(){
+  $('#view-download').classList.add('hidden');
+  $('#view-home').classList.remove('hidden');
+  resetDropzone(); renderRecent(); lucide.createIcons();
+}
+function showDownload(id){
+  $('#view-home').classList.add('hidden');
+  $('#view-download').classList.remove('hidden');
+  renderDownloadCard(id); lucide.createIcons();
+}
+
+/* ---------- dropzone ---------- */
+const dz = $('#dropzone'), fi = $('#fileInput');
+['dragenter','dragover'].forEach(e=>dz.addEventListener(e,ev=>{ev.preventDefault();dz.classList.add('dragging')}));
+['dragleave','drop'].forEach(e=>dz.addEventListener(e,ev=>{ev.preventDefault();dz.classList.remove('dragging')}));
+dz.addEventListener('drop', ev=>{ const f = ev.dataTransfer.files[0]; if(f) handleFile(f); });
+dz.addEventListener('click', ()=>{ if(!$('#dzUploading').offsetParent) fi.click(); });
+fi.addEventListener('change', ()=>{ if(fi.files[0]) handleFile(fi.files[0]); fi.value=''; });
+
+$('#optPw').onchange = e => { $('#optPwVal').disabled = !e.target.checked; if(!e.target.checked) $('#optPwVal').value=''; };
+
+function resetDropzone(){
+  ['dzUploading','dzSuccess','dzError'].forEach(id=>$('#'+id).classList.add('hidden'));
+  $('#dzIdle').classList.remove('hidden'); dz.style.cursor='pointer';
+}
+
+function showError(title,msg){
+  ['dzIdle','dzUploading','dzSuccess'].forEach(id=>$('#'+id).classList.add('hidden'));
+  $('#errTitle').textContent = title; $('#errMsg').textContent = msg;
+  $('#dzError').classList.remove('hidden'); dz.style.cursor='default'; lucide.createIcons();
+}
+
+/* ---------- upload flow (simulated transfer) ---------- */
+function handleFile(file){
+  if(file.size > MAX_SIZE){ showError('File too large', `"${file.name}" is ${fmtSize(file.size)} — the limit is 500 MB. Try a smaller file.`); return; }
+
+  const password = $('#optPw').checked && $('#optPwVal').value.trim() ? $('#optPwVal').value.trim() : null;
+  const expiry = $('#optExpiry').value;
+
+  $('#dzIdle').classList.add('hidden'); $('#dzError').classList.add('hidden');
+  $('#dzUploading').classList.remove('hidden'); dz.style.cursor='default';
+  $('#upName').textContent = file.name;
+  $('#upMeta').textContent = fmtSize(file.size);
+  lucide.createIcons();
+
+  const total = file.size;
+  let loaded = 0, lastT = performance.now(), lastL = 0;
+  const speedOf = () => { const t = performance.now(); const dt = Math.max(t-lastT,1); const v = (loaded-lastL)/dt*1000; lastT=t; lastL=loaded; return v; };
+
+  // Small files are stored for real downloads; large files are session-only.
+  const persist = file.size <= 1.5*1024*1024;
+
+  const tick = () => {
+    const chunk = Math.max(total*0.02, 128*1024) * (0.6 + Math.random()*0.9);
+    loaded = Math.min(total, loaded + chunk);
+    const pct = Math.round(loaded/total*100);
+    $('#progBar').style.width = pct+'%';
+    $('#upPct').textContent = pct+'%';
+    const spd = speedOf();
+    $('#upSpeed').innerHTML = `<i data-lucide="gauge" class="w-3.5 h-3.5"></i> ${fmtSize(spd)}/s`; lucide.createIcons();
+    const rem = spd>0 ? (total-loaded)/spd : 0;
+    $('#upEta').textContent = pct>=100 ? 'Finishing…' : `≈ ${rem<60 ? Math.ceil(rem)+'s' : Math.floor(rem/60)+'m '+Math.ceil(rem%60)+'s'}`;
+    if(pct < 100){ setTimeout(tick, 80 + Math.random()*120); }
+    else finishUpload(file, password, expiry, persist);
+  };
+  setTimeout(tick, 200);
+}
+
+function finishUpload(file, password, expiry, persist){
+  const id = uid();
+  sessionFiles[id] = file;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const rec = {
+      id, name: file.name, size: file.size, type: file.type || '',
+      date: Date.now(), password, expiry,
+      expiryAt: expiry==='24h' ? Date.now()+864e5 : expiry==='7d' ? Date.now()+7*864e5 : null,
+      maxDl: expiry==='1dl' ? 1 : Infinity,
+      downloads: 0,
+      dataUrl: persist ? reader.result : null
+    };
+    store.add(rec);
+    showSuccess(rec);
+  };
+  reader.readAsDataURL(file);
+}
+
+function showSuccess(rec){
+  $('#dzUploading').classList.add('hidden');
+  $('#dzSuccess').classList.remove('hidden');
+
+  const url = location.origin === 'null' || location.protocol==='file:'
+    ? location.href.split('#')[0] + '#/d/' + rec.id
+    : location.origin + location.pathname + '#/d/' + rec.id;
+  $('#shareLink').value = url;
+  $('#openLinkBtn').href = url;
+  $('#sumName').textContent = rec.name;
+  $('#sumSize').textContent = fmtSize(rec.size);
+  $('#sumExp').textContent = rec.expiry==='never' ? 'Never' : rec.expiry==='24h' ? '24 hours' : rec.expiry==='7d' ? '7 days' : 'After 1 download';
+
+  // QR code
+  const box = $('#qrBox'); box.innerHTML = '';
+  new QRCode(box, { text: url, width: 132, height: 132, colorDark:'#1c2440', colorLight:'#ffffff', correctLevel: QRCode.CorrectLevel.M });
+
+  renderRecent(); lucide.createIcons();
+  burst($('#dzSuccess'));
+  toast('Upload complete — link ready!');
+}
+
+function burst(container){
+  const colors = ['#8b5cf6','#3b82f6','#22d3ee','#10b981','#f59e0b','#ec4899'];
+  for(let i=0;i<28;i++){
+    const c = document.createElement('div');
+    c.className = 'confetti';
+    const ang = Math.random()*Math.PI*2, dist = 90+Math.random()*160;
+    c.style.cssText = `left:50%;top:22%;background:${colors[i%colors.length]};--tx:${Math.cos(ang)*dist}px;--ty:${Math.sin(ang)*dist-40}px;--rot:${Math.random()*720-360}deg`;
+    container.appendChild(c); setTimeout(()=>c.remove(),1200);
+  }
+}
+
+$('#copyBtn').onclick = async () => {
+  try{ await navigator.clipboard.writeText($('#shareLink').value); }
+  catch(e){ $('#shareLink').select(); document.execCommand('copy'); }
+  $('#copyBtn').innerHTML = '<i data-lucide="check" class="w-4 h-4"></i><span class="hidden sm:inline">Copied!</span>';
+  lucide.createIcons(); toast('Link copied to clipboard');
+  setTimeout(()=>{ $('#copyBtn').innerHTML = '<i data-lucide="copy" class="w-4 h-4"></i><span class="hidden sm:inline">Copy</span>'; lucide.createIcons(); }, 1800);
+};
+$('#againBtn').onclick = () => { resetDropzone(); };
+
+/* ---------- recent uploads ---------- */
+function statusOf(rec){
+  if(rec.expiryAt && Date.now() > rec.expiryAt) return ['Expired','#ef4444'];
+  if(rec.downloads >= rec.maxDl) return ['Exhausted','#ef4444'];
+  if(rec.expiryAt){ const h = Math.round((rec.expiryAt-Date.now())/36e5); return [`Expires in ${h<24?h+'h':Math.round(h/24)+'d'}`, '#f59e0b']; }
+  if(rec.maxDl===1) return ['1 download used','#f59e0b'];
+  return ['Active','#10b981'];
+}
+function renderRecent(){
+  const list = store.get();
+  $('#recentEmpty').style.display = list.length ? 'none' : 'block';
+  $('#recentList').innerHTML = list.map(rec=>{
+    const [st,color] = statusOf(rec);
+    const url = (location.origin==='null'||location.protocol==='file?'?'':location.origin+location.pathname)+'#/d/'+rec.id;
+    return `<div class="glass card-hover rounded-2xl p-4 flex items-center gap-4">
+      ${fileIcon(rec.name,'w-5 h-5')}
+      <div class="min-w-0 flex-1">
+        <p class="font-semibold text-sm truncate">${esc(rec.name)}</p>
+        <p class="text-xs" style="color:var(--sub)">${fmtSize(rec.size)} · ${fmtDate(rec.date)} · ${rec.downloads} download${rec.downloads===1?'':'s'}</p>
+      </div>
+      <span class="badge font-bold uppercase px-2.5 py-1 rounded-full shrink-0" style="color:${color};background:${color}18;border:1px solid ${color}40">${st}</span>
+      <div class="flex gap-1.5 shrink-0">
+        <button class="w-9 h-9 rounded-lg glass flex items-center justify-center hover:scale-110 transition" title="Copy link" onclick="copyRecent('${rec.id}')"><i data-lucide="copy" class="w-4 h-4"></i></button>
+        <a href="#/d/${rec.id}" class="w-9 h-9 rounded-lg glass flex items-center justify-center hover:scale-110 transition" title="Open"><i data-lucide="external-link" class="w-4 h-4"></i></a>
+        <button class="w-9 h-9 rounded-lg glass flex items-center justify-center hover:scale-110 transition hover:!bg-red-500/20" title="Delete" onclick="delRecent('${rec.id}')"><i data-lucide="trash-2" class="w-4 h-4 text-red-400"></i></button>
+      </div>
+    </div>`;
+  }).join('');
+  lucide.createIcons();
+}
+const esc = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+window.copyRecent = id => {
+  const rec = store.find(id); if(!rec) return;
+  const url = location.origin + location.pathname + '#/d/' + id;
+  navigator.clipboard.writeText(url).then(()=>toast('Link copied'));
+};
+window.delRecent = id => { store.del(id); renderRecent(); toast('Removed from recent uploads'); };
+$('#clearBtn').onclick = () => { store.set([]); renderRecent(); };
+
+/* ---------- download page ---------- */
+function renderDownloadCard(id){
+  const rec = store.find(id);
+  const card = $('#dlCard');
+
+  if(!rec){
+    card.innerHTML = `<div class="text-center py-6">
+      <div class="icon-tile mx-auto mb-5 bg-red-500/15 border border-red-400/30"><i data-lucide="link-2-off" class="w-10 h-10 text-red-400"></i></div>
+      <h3 class="font-bold text-xl mb-2">Link not found</h3>
+      <p class="text-sm mb-6" style="color:var(--sub)">This file doesn't exist on this device. Links are stored locally in the demo.</p>
+      <a href="#/" class="btn-primary text-white font-semibold px-6 py-3 rounded-xl inline-flex items-center gap-2 text-sm"><i data-lucide="home" class="w-4 h-4"></i> Go to NimbusShare</a>
+    </div>`;
+    lucide.createIcons(); return;
+  }
+
+  const expired = (rec.expiryAt && Date.now() > rec.expiryAt) || rec.downloads >= rec.maxDl;
+
+  if(expired){
+    card.innerHTML = `<div class="text-center py-6">
+      <div class="icon-tile mx-auto mb-5 bg-red-500/15 border border-red-400/30"><i data-lucide="timer-off" class="w-10 h-10 text-red-400"></i></div>
+      <h3 class="font-bold text-xl mb-2">${rec.downloads>=rec.maxDl ? 'Download limit reached' : 'This link has expired'}</h3>
+      <p class="text-sm mb-6" style="color:var(--sub)">Ask the sender to upload the file again.</p>
+      <div class="glass rounded-2xl p-4 text-sm flex items-center gap-3 text-left">
+        ${fileIcon(rec.name,'w-5 h-5')}
+        <div class="min-w-0"><p class="font-semibold truncate">${esc(rec.name)}</p><p class="text-xs" style="color:var(--sub)">${fmtSize(rec.size)}</p></div>
+      </div>
+    </div>`;
+    lucide.createIcons(); return;
+  }
+
+  const pwBlock = rec.password ? `
+    <div class="mb-5">
+      <label class="text-sm font-semibold flex items-center gap-2 mb-2"><i data-lucide="lock" class="w-4 h-4 text-violet-400"></i> This file is password protected</label>
+      <input id="dlPw" type="password" placeholder="Enter password…" class="glass w-full rounded-xl px-4 py-3 text-sm bg-transparent outline-none focus:ring-2 ring-violet-400/50"/>
+      <p id="pwErr" class="text-xs text-red-400 mt-2 hidden">Incorrect password — try again.</p>
+    </div>` : '';
+
+  card.innerHTML = `
+    <div class="text-center mb-6">
+      <div class="icon-tile mx-auto mb-4" style="background:linear-gradient(135deg,#8b5cf622,#3b82f622);border:1px solid #8b5cf644">
+        ${fileIcon(rec.name,'w-9 h-9').replace('width:2.6rem;height:2.6rem','width:5.5rem;height:5.5rem;border-radius:1.4rem;background:transparent;border:none')}
+      </div>
+      <h3 class="font-bold text-xl break-all px-2">${esc(rec.name)}</h3>
+      <p class="text-sm mt-1" style="color:var(--sub)">${fmtSize(rec.size)} · uploaded ${fmtDate(rec.date)}</p>
+    </div>
+    ${pwBlock}
+    <button id="dlBtn" class="btn-primary w-full text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 text-base">
+      <i data-lucide="download" class="w-5 h-5"></i> Download File
+    </button>
+    <div class="flex items-center justify-between mt-4 text-xs" style="color:var(--sub)">
+      <span class="flex items-center gap-1.5"><i data-lucide="download-cloud" class="w-3.5 h-3.5"></i> <b id="dlCount">${rec.downloads}</b> download${rec.downloads===1?'':'s'} so far</span>
+      <span class="flex items-center gap-1.5"><i data-lucide="timer" class="w-3.5 h-3.5"></i> ${rec.expiry==='never'?'Never expires':rec.expiry==='24h'?'Expires in 24h':rec.expiry==='7d'?'Expires in 7d':'Expires after 1 download'}</span>
+    </div>`;
+  lucide.createIcons();
+
+  $('#dlBtn').onclick = () => {
+    if(rec.password){
+      if($('#dlPw').value !== rec.password){ $('#pwErr').classList.remove('hidden'); $('#dlPw').focus(); return; }
+    }
+    doDownload(rec);
+  };
+}
+
+async function doDownload(rec){
+  rec.downloads++; store.set(store.get().map(f => f.id===rec.id ? rec : f));
+  const btn = $('#dlBtn');
+  btn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Preparing…'; lucide.createIcons();
+
+  let blob;
+  const f = sessionFiles[rec.id];
+  if(f){ blob = f; }
+  else if(rec.dataUrl){ blob = await (await fetch(rec.dataUrl)).blob(); }
+  else { blob = new Blob([`NimbusShare demo\n\nThe file "${rec.name}" (${fmtSize(rec.size)}) was uploaded from this browser.\nLarge files are not persisted in the localStorage demo — re-upload it in the same session to download the real bytes.`], {type:'text/plain'}); }
+
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = rec.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+
+  btn.innerHTML = '<i data-lucide="check" class="w-5 h-5"></i> Downloaded!';
+  lucide.createIcons(); burst(btn);
+  const c = $('#dlCount'); if(c) c.textContent = rec.downloads;
+  toast('Download started');
+  if(rec.downloads >= rec.maxDl){ setTimeout(()=>renderDownloadCard(rec.id), 1600); }
+}
+
+/* ---------- boot ---------- */
+route(); lucide.createIcons();
+</script>
+</body>
+</html>
